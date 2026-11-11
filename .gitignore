@@ -1,0 +1,18 @@
+# MATLAB
+*.asv
+*.m~
+*.autosave
+*.mex*
+slprj/
+*.mat
+
+# Octave
+octave-workspace
+
+# Generated output
+*.png
+results/
+
+# OS
+.DS_Store
+Thumbs.db
