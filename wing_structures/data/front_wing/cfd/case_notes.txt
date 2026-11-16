@@ -1,0 +1,17 @@
+Front wing CFD case notes
+
+Axes (CFD coordinates, driver's view):
+  x = forward, y = up, z = right  (right-handed)
+  Downforce = -y, drag = -x
+
+Model: half car (left half, z <= 0), symmetry plane at z = 0
+  (Fluent mesh check: z max = 1.702155e-05 m, z min = -6.688686 m)
+CFD freestream speed: 15 m/s
+Design (predicted max) speed: 25 m/s -> V^2 scale factor (25/15)^2 = 2.7778
+Ride height / pitch: ______  (optional, for traceability)
+
+Fluent Report > Forces, zone front-wing (half model) [N]:
+             Fx (fwd)      Fy (up)        Fz (right)
+  Pressure   -8.9581374    -74.684269     0.39330499
+  Viscous    -0.69002864   -0.0032465998  -0.02527921
+  Total      -9.648166     -74.687516     0.36802578

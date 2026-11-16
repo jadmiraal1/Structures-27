@@ -16,3 +16,8 @@ results/
 # OS
 .DS_Store
 Thumbs.db
+
+# Large raw inputs (regenerable from CAD/CFD; GitHub rejects files >100 MB)
+*.stl
+wing_structures/data/**/cfd/*
+!wing_structures/data/**/cfd/case_notes.txt
