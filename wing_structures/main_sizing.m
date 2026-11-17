@@ -185,4 +185,4 @@ for j = 1:numel(cfg.skin_options)
     fprintf('   | %10.0f %14.1f\n', R(sel).V_mount_rib, R(sel).T_mount);
 end
 fprintf('(mount rib V = skin share of the mount reaction, carried by ribs into the plate;\n mount T = pitch torque the mount reacts, ultimate)\n');
-save(fullfile('results', [cfg.name '_sizing.mat']), 'R');
+save(fullfile('results', [cfg.name '_sizing.mat']), 'R', '-v7');

@@ -22,6 +22,9 @@ main_stage1      % skin vs spar options (generic section)
 main_geometry    % slice CAD along span: depth map, skin properties per station
 main_loads       % CFD spanwise loads, checks, limit/ultimate factors
 main_sizing      % stage 2 sweep (needs the two results files above)
+pick_design      % lightest design meeting strength + your stiffness limits
+main_ribs        % loft corners, rib spacing from skin buckling, rib layout per skin variant
+fea_check        % prediction for the SolidWorks FEA check of the beam model
 ```
 
 Inputs: `front_wing_config.m` (paths, coordinate transform, load case,
@@ -89,7 +92,11 @@ X/Y/Z Face Area. STL and CFD exports are git-ignored (large, regenerable).
 - Flap + endplate load enters the main element tip as one force + couple
   (flaps cantilevered from the endplates).
 - Rib spacing from skin buckling uses a flat wide column between ribs,
-  ignoring skin curvature: conservative.
+  a_max = pi*sqrt(D11/N), ignoring skin curvature and rib fixity:
+  conservative.
+- Loft corners: a skin force N turning through an angle dtheta pushes
+  sideways with N*dtheta per unit chord; corners above cfg.kink_rib_min
+  get their own rib.
 - Material properties as [low high] bounds: low for stiffness checks, both
   bounds for load sharing, low strength for allowables.
 - Honeycomb core carries no axial load. Uncapped sandwich-web torsion uses
@@ -118,6 +125,12 @@ X/Y/Z Face Area. STL and CFD exports are git-ignored (large, regenerable).
 | `station_props.m` | Skin + plate properties per station |
 | `halfspan_beam.m` | Half-span bending/torsion with centre symmetry and mount |
 | `main_sizing.m` | Stage 2 sizing sweep driver |
+| `pick_design.m` | Picks the lightest design meeting strength and the stiffness limits in the config |
+| `main_ribs.m` | Rib analysis for the chosen design: loft corner loads, allowable rib spacing, rib layout, skin variants |
+| `zoned_props.m` | Section properties with a skin layup that changes along the span |
+| `kink_corners.m` | Finds loft corners and the sideways skin load at each |
+| `rib_layout.m` | Places ribs so no bay exceeds its allowable spacing |
+| `fea_check.m` | Skin-only check case and predictions for an independent FEA comparison |
 | `main_geometry.m`, `main_loads.m` | Geometry and loads drivers |
 | `tests/` | Validation tests |
 
@@ -126,3 +139,23 @@ X/Y/Z Face Area. STL and CFD exports are git-ignored (large, regenerable).
 - Megson, *Aircraft Structures for Engineering Students* (thin-wall sections, shear flow, boom idealization)
 - Bruhn, *Analysis and Design of Flight Vehicle Structures* (buckling)
 - Hexcel, *HexWeb Honeycomb Sandwich Design Technology*; Zenkert, *An Introduction to Sandwich Construction*
+
+## Design-review figures (`review_figures.m`)
+
+MATLAB script that reads the saved results and writes three PNG figures for slides to
+`results/review`: loads and bending moment, the section at the mount, and the rib layout
+against the allowable spacing. It does no sizing of its own.
+
+1. From `wing_structures`, run `main_ribs` (it needs the saved results of `main_geometry`
+   and `main_loads`). Re-run it whenever `front_wing_config.m` changes.
+2. Run `review_figures`.
+3. To show a different skin variant, change `variant` at the top of the script to any text
+   contained in the variant name (default `'inboard of 350'`).
+
+The script also prints the rib stations, each bay against its allowable spacing, mass,
+deflection and twist. Lofted regions are shaded from what `main_ribs` saved. With
+`cfg.rib_no_loft = true` (see `front_wing_config.m`) no rib is placed inside a loft;
+`main_ribs` flags any skin variant that cannot span a loft without one.
+
+`review_figures.py` is an earlier Python version of the same figures (needs numpy, scipy,
+matplotlib; run `python review_figures.py`). It is not needed if you use the MATLAB script.

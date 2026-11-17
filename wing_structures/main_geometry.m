@@ -67,7 +67,16 @@ for k = 1:ns
 end
 fprintf('(angle = chord line vs horizontal, + nose up; y_LE = leading edge height)\n');
 
-save(fullfile('results', [cfg.name '_geometry.mat']), 'G', 'depth', 'xc', 'outlines', 'skin');
+% Front-view skin lines (highest and lowest point of each section) on a
+% fine spanwise grid, used to find the loft corners (main_ribs)
+sf = (0:0.004:ginfo.s_max)';
+front = struct('s', sf, 'y_top', zeros(size(sf)), 'y_bot', zeros(size(sf)));
+for i = 1:numel(sf)
+    lp = slice_mesh(T, 3, z_of_s(min(max(sf(i), ginfo.s_min + 1e-4), ginfo.s_max - 1e-4)));
+    front.y_top(i) = max(lp{1}(:,2)); front.y_bot(i) = min(lp{1}(:,2));
+end
+
+save(fullfile('results', [cfg.name '_geometry.mat']), 'G', 'depth', 'xc', 'outlines', 'skin', 'front', '-v7');
 
 %% Plots
 figure;

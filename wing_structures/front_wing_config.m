@@ -54,4 +54,35 @@ cfg.plate_gauges_in = [0.063 0.080 0.090 0.100 0.125 0.160 0.190 0.250];
 % Candidate spar plane positions, distance aft of the leading edge [m]
 % (flat plate -> constant x plane; chord is 321-331 mm)
 cfg.spar_aft_LE = 0.050:0.015:0.125;
+
+%% Rib analysis (main_ribs): the chosen design and skin variants to compare
+cfg.rib_design = struct('spar_aft', 0.080, 'plate_in', 0.063, 'base_layup', [0 45 0]);
+% Each variant: a name and zones of extra plies ([] = base layup everywhere).
+% zone fields: s = [start end] in m from centre plane, layup = local layup.
+cfg.rib_variants = { ...
+    struct('name', '[0 45 0] everywhere',          'zones', []), ...
+    struct('name', '[0 0 45 0 0] inboard of 275',  'zones', struct('s', [0 0.275], 'layup', [0 0 45 0 0])), ...
+    struct('name', '[0 0 45 0 0] inboard of 350',  'zones', struct('s', [0 0.350], 'layup', [0 0 45 0 0])), ...
+    struct('name', '[0 0 45 0 0] inboard of 450',  'zones', struct('s', [0 0.450], 'layup', [0 0 45 0 0])), ...
+    struct('name', '[0 45 45 0] everywhere',       'zones', struct('s', [0 1], 'layup', [0 45 45 0])), ...
+    struct('name', '[0 0 45 0 0] everywhere',      'zones', struct('s', [0 1], 'layup', [0 0 45 0 0])) };
+cfg.kink_curv_min = 3;       % rad/m: skin counts as turning above this
+cfg.kink_rib_min  = 1000;    % N per m of chord at ultimate: corner needs its own rib above this
+cfg.rib_merge     = 0.015;   % m: a corner this close to the mount rib uses the mount rib
+cfg.rib_no_loft     = true;        % true: no ribs inside lofted regions (where the wing rises or drops in
+                                   %   front view). A rib is placed just outside each end of each loft instead,
+                                   %   and corners no longer get their own rib. false: previous behaviour.
+cfg.loft_slope_min  = deg2rad(1);  % rad: skin lines steeper than this in front view count as lofted
+cfg.rib_loft_margin = 0.003;       % m: rib centre this far outside the loft end (rib on constant section)
+cfg.rib_K         = 0.7;     % skin buckling effective length factor: 1 = ribs act as pins (conservative),
+                             %   ~0.7 = filleted/tabbed ribs partly clamp the skin, 0.5 = fully clamped
+cfg.rib_check_load = 'ultimate';  % 'ultimate' (no skin buckling below ultimate), 'limit', or
+                                  % 'aero' (max-speed aero load only, no factors - for comparing with past wings)
+cfg.rib_areal     = 0.45;    % kg/m^2 of rib face. PLACEHOLDER: 3 mm balsa at 150 kg/m^3, no lightening holes
+cfg.rib_fillet    = 0.010;   % kg per m of rib perimeter (fillets both sides). PLACEHOLDER
+
+%% Stiffness requirements at LIMIT load (used by pick_design). YOUR CALL.
+% NaN = not set; pick_design then lists the trade-off designs instead.
+cfg.max_tip_deflection_mm = NaN;
+cfg.max_tip_twist_deg     = NaN;
 end

@@ -148,7 +148,7 @@ fprintf(' + = nose-up about +z (right). Reference line x = %.1f mm, y = %.1f mm.
 %% Save
 loads = struct('cfg', cfg, 'L', L, 'L_raw', L_raw, 'filled', filled, 'F_ep', F_ep, 'M_ep', M_ep, 'r_ep', r_ep, ...
     'k_speed', k_speed, 'k_limit', k_limit, 'k_ult', k_ult, 'coverage', coverage);
-save(fullfile('results', [cfg.name '_loads.mat']), 'loads');
+save(fullfile('results', [cfg.name '_loads.mat']), 'loads', '-v7');
 fid = fopen(fullfile('results', [cfg.name '_loads.csv']), 'w');
 fprintf(fid, '# %s main element, half wing, CFD speed %.1f m/s. Multiply by k_limit=%.4f or k_ult=%.4f.\n', cfg.name, cfg.V_cfd, k_limit, k_ult);
 fprintf(fid, '# Moments per unit span about x=%.6f m, y=%.6f m at each strip centre.\n', ref_xy);

@@ -49,4 +49,23 @@ nfail = nfail + check('Beam: centre torque = 0', abs(B2.T(1)) + 1, 1, 1e-6);
 nfail = nfail + check('Beam: centre twist t0 sm^2/(2GJ)', B2.phi(1), t0*sm^2/(2*GJ), 5e-3);
 nfail = nfail + check('Beam: tip twist (whole span)', B2.phi(end), t0*a^2/(2*GJ), 1e-3);
 
+%% 6. Rib layout: constant allowable spacing
+sg = linspace(0, 0.6, 601)';
+[rb, by] = rib_layout(sg, 0.1*ones(size(sg)), 0.2, 0.6);
+nfail = nfail + check('Ribs: positions (a = 100 mm)', norm(rb' - [0 0.1 0.2 0.3 0.4 0.5 0.6]) + 1, 1, 1e-9);
+nfail = nfail + check('Ribs: no bay longer than a', double(all(by(:,3) <= by(:,4) + 1e-12)), 1, 0);
+% allowable spacing that shrinks inboard forces closer ribs there only
+a2 = 0.05 + 0.2*sg;
+[rb2, by2] = rib_layout(sg, a2, 0.2, 0.6);
+nfail = nfail + check('Ribs: varying a respected in every bay', double(all(by2(:,3) <= by2(:,4) + 1e-12)), 1, 0);
+
+%% 7. Kink corners: flat - 20 deg ramp - flat, constant skin force
+sk = (0:0.001:0.6)'; ang = 20*pi/180;
+yk = zeros(size(sk)); r = sk > 0.2 & sk <= 0.3; yk(r) = (sk(r) - 0.2)*tan(ang); yk(sk > 0.3) = 0.1*tan(ang);
+Kc = kink_corners(sk, yk + 0.03, yk, 2e4*ones(size(sk)), -3e4*ones(size(sk)), 3);
+nfail = nfail + check('Kink: two corners found', numel(Kc), 2, 0);
+nfail = nfail + check('Kink: first corner at ramp start', Kc(1).s, 0.2, 0.02);
+nfail = nfail + check('Kink: angle change = 20 deg', abs(Kc(1).dtheta), ang, 0.02);
+nfail = nfail + check('Kink: F_bot = |N| * dtheta', Kc(1).F_bot, 3e4*ang, 0.02);
+
 fprintf('\n%d test(s) failed.\n', nfail);
