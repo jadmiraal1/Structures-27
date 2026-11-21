@@ -20,7 +20,8 @@ function B = halfspan_beam(st, ld, opt)
 % opt : s_m, s_tip, z_of_s (handle), side (+1 right / -1 left), bc,
 %       r_mount_xy ([x y] of the mount on the spar), ns (grid points)
 %
-% Returns grid s and, per point: M_hog (bending moment, + = hogging, tip
+% Returns grid s and, per point: M_lag (chordwise bending moment, see below),
+% M_hog (bending moment, + = hogging, tip
 % loads down -> top fibres in tension), T (torque about the elastic axis,
 % + = nose up), w (deflection, + = down), phi (twist, + = nose up, rad),
 % kappa = M_hog/EI, and the mount reactions.
@@ -57,6 +58,11 @@ inner = s < opt.s_m;
 Mint(inner,3) = Mint(inner,3) + CRz;
 
 M_hog = opt.side * Mint(:,1);
+% Bending moment from chordwise (drag) loads, pinned at the mount in that
+% plane. Sign: with strain = a (y - yc) + b (x - xc), x forward, M_lag is
+% the integral of stress * (x - xc); + = leading-edge fibres in tension
+% (tip pushed aft). Used by skin_strain; not used for deflection.
+M_lag = -opt.side * Mint(:,2);
 T     = Mint(:,3);
 Mc = 0;
 if strcmpi(opt.bc, 'clamped')
@@ -80,7 +86,7 @@ w = w - w(im);                               % w(s_m) = 0
 phi = cumtrapz(s, T ./ GJ);
 phi = phi - phi(im);                         % phi(s_m) = 0
 
-B = struct('s', s, 'M_hog', M_hog, 'T', T, 'w', w, 'phi', phi, 'kappa', kappa, ...
+B = struct('s', s, 'M_hog', M_hog, 'M_lag', M_lag, 'T', T, 'w', w, 'phi', phi, 'kappa', kappa, ...
     'EI', EI, 'GJ', GJ, 'x_ea', xea, 'y_ea', yea, 'R', R, 'CRz', CRz, 'Mc', Mc, ...
     'im', im, 'bc', opt.bc);
 end

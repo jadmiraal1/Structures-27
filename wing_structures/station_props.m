@@ -16,11 +16,13 @@ ns = numel(s_st);
 z = zeros(ns, 1);
 P = struct('s', s_st(:), 'EI_s', z, 'GJ_s', z, 'x_sc', z, 'y_c', z, 'y_top', z, ...
     'y_bot', z, 'A_enc', z, 'm_s', z, 'h_p', z, 'y_p', z, 'EI_p', z, 'GJ_p', z, ...
-    'm_p', z, 'EI', z, 'GJ', z, 'x_ea', z, 'y_ea', z);
+    'm_p', z, 'EI', z, 'GJ', z, 'x_ea', z, 'y_ea', z, 'x_c', z, 'EIxx_s', z, 'EIxz_s', z, 'EIzz_s', z);
 for k = 1:ns
     xy = outlines{k};
     Sk = thinwall_closed_section(xy, lam.h, lam.Ex, lam.Gxy, lam.rho);
     P.EI_s(k) = Sk.EIxx_eff; P.GJ_s(k) = Sk.GJ; P.y_c(k) = Sk.zc;
+    % full skin bending stiffnesses about its centroid, for unsymmetric-bending strains (skin_strain)
+    P.x_c(k) = Sk.xc; P.EIxx_s(k) = Sk.EIxx; P.EIxz_s(k) = Sk.EIxz; P.EIzz_s(k) = Sk.EIzz;
     P.A_enc(k) = Sk.Aenc; P.m_s(k) = Sk.mass_per_len;
     P.y_top(k) = max(xy(:,2)); P.y_bot(k) = min(xy(:,2));
     P.x_sc(k) = shear_center_closed(xy, lam.h);

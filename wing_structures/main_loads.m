@@ -1,4 +1,4 @@
-% MAIN_LOADS  Spanwise load distribution on the front wing main element
+% MAIN_LOADS  Spanwise load distribution on the wing main element
 % from the Fluent wall export, plus the lumped flap + endplate load.
 %
 % Steps:
@@ -15,8 +15,9 @@
 %   6. Scale to design speed, limit and ultimate loads.
 % Run from the wing_structures folder.
 clear; close all;
-cfg = front_wing_config();
+cfg = wing_config();                  % active wing: see wing_config.m
 if ~exist('results', 'dir'), mkdir('results'); end
+fprintf('Wing: %s\n', cfg.name);
 
 %% 1. Read
 [T, Tskin, ginfo] = load_main_element(cfg);
@@ -30,12 +31,16 @@ fprintf('CFD: %d faces, span %.1f-%.1f mm\n', size(F.xyz,1), 1e3*min(s_face), 1e
 %% 2. Check integration against Fluent
 [Ff, Fp, Fv] = face_forces(F);
 Pt = sum(Fp, 1); Vt = sum(Fv, 1);
+have_fluent = all(isfinite([cfg.fluent_pressure cfg.fluent_viscous]));
 ep = norm(Pt - cfg.fluent_pressure) / norm(cfg.fluent_pressure);
 ev = norm(Vt - cfg.fluent_viscous)  / norm(cfg.fluent_viscous);
 fprintf('\nCheck vs Fluent Report > Forces (whole zone):\n');
 fprintf('  pressure  [%10.4f %10.4f %10.4f]  Fluent [%10.4f %10.4f %10.4f]  rel err %.1e\n', Pt, cfg.fluent_pressure, ep);
 fprintf('  viscous   [%10.4f %10.4f %10.4f]  Fluent [%10.4f %10.4f %10.4f]  rel err %.1e\n', Vt, cfg.fluent_viscous, ev);
-if ep > 1e-4 || ev > 1e-4
+if ~have_fluent
+    warning('main_loads:nocheck', ['cfg.fluent_pressure / cfg.fluent_viscous are not set, so the integration is NOT checked.\n' ...
+        'Compare the two rows above with Fluent Report > Forces for this zone and enter them in the config.']);
+elseif ep > 1e-4 || ev > 1e-4
     warning('main_loads:check', 'Integrated forces do not match Fluent. Check export quantities/units before using results.');
 end
 
@@ -110,8 +115,23 @@ r0 = [repmat(ref_xy, nb, 1) z_of_s(L.s_mid)];       % strip reference points
 M_main_ep = sum(L.M + cross(r0 - r_ep, L.F, 2), 1);  % main element about r_ep
 F_ep = F_all - sum(L.F, 1);
 M_ep = M_all - M_main_ep;
+% How the lump reaches the main element tip. 'clamped': force plus the full couple
+% (flaps cantilevered from the endplate). 'pinned': force plus the pitch couple only.
+% The bending couples are dropped because (a) flaps that span endplate to endplate
+% are simply supported there, and (b) the tipping moment from the side force on the
+% endplate is carried by axial forces in the main element and flaps (the elements
+% and endplates form a frame), not by bending of the main element.
+fixity = 'clamped';
+if isfield(cfg, 'flap_tip_fixity'), fixity = cfg.flap_tip_fixity; end
+M_ep_clamped = M_ep;
+if strcmpi(fixity, 'pinned')
+    M_ep = [0 0 M_ep(3)];
+elseif ~strcmpi(fixity, 'clamped')
+    error('main_loads:fixity', 'cfg.flap_tip_fixity must be ''pinned'' or ''clamped''.');
+end
 % check: conservation (exact by construction, guards against bookkeeping errors)
-e_cons = norm(sum(L.F,1) + F_ep - [cfg.fluent_pressure + cfg.fluent_viscous]) / norm(F_all);
+F_ref = F_all; if have_fluent, F_ref = cfg.fluent_pressure + cfg.fluent_viscous; end
+e_cons = norm(sum(L.F,1) + F_ep - F_ref) / norm(F_all);
 if e_cons > 1e-6
     warning('main_loads:conservation', 'Main + lump does not reproduce the Fluent total (rel err %.1e).', e_cons);
 end
@@ -126,6 +146,7 @@ fprintf('\nMain element (half wing) at CFD speed %.0f m/s:\n', cfg.V_cfd);
 fprintf('  F = [%.2f %.2f %.2f] N   (downforce %.2f N, drag %.2f N)\n', F_main, -F_main(2), -F_main(1));
 fprintf('Flaps + endplate (half wing), lumped at main element tip [%.1f %.1f %.1f] mm:\n', 1e3*r_ep);
 fprintf('  F = [%.2f %.2f %.2f] N,  M = [%.3f %.3f %.3f] N m\n', F_ep, M_ep);
+fprintf('  (cfg.flap_tip_fixity = ''%s''; the full couple about the tip is [%.3f %.3f %.3f] N m)\n', fixity, M_ep_clamped);
 fprintf('Main + other = [%.4f %.4f %.4f] N (should equal the Fluent total)\n', F_main + F_ep);
 if any(filled)
     fprintf('Interpolated %d strip(s) with coverage < %.2f: s = %s mm\n', nnz(filled), cfg.coverage_min, ...
@@ -164,7 +185,7 @@ stairs([edges(1:end-1); edges(end)]*1e3, [-L_raw.f(:,2); -L_raw.f(end,2)], ':', 
 stairs([edges(1:end-1); edges(end)]*1e3, [-L.f(:,2); -L.f(end,2)], 'DisplayName', sprintf('%.0f m/s (CFD, filled)', cfg.V_cfd));
 stairs([edges(1:end-1); edges(end)]*1e3, k_limit*[-L.f(:,2); -L.f(end,2)], 'DisplayName', 'limit load');
 ylabel('Downforce per span [N/m]'); legend('Location', 'best');
-title('Front wing main element, half span');
+title(sprintf('%s main element, half span', strrep(cfg.name, '_', ' ')));
 subplot(2,1,2); hold on; grid on;
 stairs([edges(1:end-1); edges(end)]*1e3, [coverage; coverage(end)]);
 plot([0 edges(end)]*1e3, [1 1], 'k--');

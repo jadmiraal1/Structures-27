@@ -5,7 +5,7 @@
 % for each skin layup, so you can see the trade-off and set the limits.
 % Needs results/<name>_sizing.mat from main_sizing. Run from wing_structures.
 clear;
-cfg = front_wing_config();
+cfg = wing_config();                  % active wing: see wing_config.m
 S = load(fullfile('results', [cfg.name '_sizing.mat'])); R = S.R;
 R = R([R.pass]);                                   % strength at ultimate
 m = [R.m_tot]'; w = [R.w_tip_mm]'; th = abs([R.twist_tip_deg])';

@@ -16,14 +16,19 @@
 %
 % Needs results from main_geometry and main_loads. Run from wing_structures.
 clear; close all;
-cfg = front_wing_config();
+cfg = wing_config();                  % active wing: see wing_config.m
 M   = materials_input();
+fprintf('Wing: %s\n', cfg.name);
 Gm  = load(fullfile('results', [cfg.name '_geometry.mat']));
 Ld  = load(fullfile('results', [cfg.name '_loads.mat'])); Ld = Ld.loads;
 z_of_s = @(s) cfg.z_sym + s / cfg.side;
 D = cfg.rib_design;
 % Lofted regions (wing rises or drops in front view): no ribs inside them when cfg.rib_no_loft
 no_loft = isfield(cfg, 'rib_no_loft') && cfg.rib_no_loft;
+% Skin strain model (see beam_skin_strains); defaults keep the original method
+strain_model = 'horizontal'; drag_bending = false;
+if isfield(cfg, 'strain_model'), strain_model = cfg.strain_model; end
+if isfield(cfg, 'drag_bending'), drag_bending = cfg.drag_bending; end
 lofts = zeros(0, 2);
 if no_loft
     lofts = loft_regions(Gm.front.s, Gm.front.y_top, Gm.front.y_bot, cfg.loft_slope_min);
@@ -71,9 +76,9 @@ for v = 1:nv
         lh = lamH(lay); ll = lamL(lay);
         D11(i) = lh.D(1,1); Ext(i) = lh.Ex * lh.h; ar(i) = ll.areal;
     end
-    yt = hold_i(PC, 'y_top', sg); yb = hold_i(PC, 'y_bot', sg); yc = hold_i(PC, 'y_c', sg);
-    N_top =  Ext .* BC.kappa .* (yt - yc);          % + tension
-    N_bot = -Ext .* BC.kappa .* (yc - yb);
+    [e_top, e_bot] = beam_skin_strains(PC, BC, Gm.outlines, strain_model, drag_bending);
+    N_top = Ext .* e_top;                           % + tension
+    N_bot = Ext .* e_bot;
     N_c = max(max(-N_top, -N_bot), 1e-6);           % compression at ultimate
     load_fac = 1;
     if strcmpi(cfg.rib_check_load, 'limit'), load_fac = Ld.k_limit / Ld.k_ult; end
@@ -82,7 +87,6 @@ for v = 1:nv
     a_max = (pi / cfg.rib_K) * sqrt(D11 ./ (load_fac * N_c));
 
     % strength
-    e_top = BC.kappa .* (yt - yc); e_bot = -BC.kappa .* (yc - yb);
     MS_skin = min(M.twill.eps_t(1) / max([e_top; e_bot]), M.twill.eps_c(1) / max([-e_top; -e_bot])) - 1;
     sig_p = al{2}.E * abs(BB.kappa) .* hold_i(PB, 'h_p', BB.s) / 2;
     MS_plate = M.alum.Fty(1) / max(sig_p) - 1;
@@ -131,6 +135,7 @@ for v = 1:nv
     end
     V(v).nsens = nsens;
     V(v).lofts = lofts; V(v).ribs_in_loft = ribs(in_loft);
+    V(v).M_ult = BC.M_hog; V(v).T_ult = BC.T;     % beam bending moment and torque at ultimate, on V(v).s
     V(v).name = var.name; V(v).ribs = ribs; V(v).bays = bays; V(v).a = a_max; V(v).s = sg;
     V(v).corners = K; V(v).fixed = sort(fixed);
     V(v).m = m_skin + m_plate; V(v).m_ribs = m_ribs; V(v).w = 1e3*BA.w(end); V(v).th = rad2deg(BA.phi(end));
@@ -143,6 +148,8 @@ end
 fprintf('Design: base skin %s, %.3f in 6061-T6 plate %.0f mm behind LE, mount at %.2f mm (%s)\n', ...
     mat2str(D.base_layup), D.plate_in, 1e3*D.spar_aft, 1e3*cfg.mount_s, cfg.mount_bc);
 fprintf('Loads: limit factor %.3f, ultimate %.3f\n', Ld.k_limit, Ld.k_ult);
+if drag_bending, dtxt = ', with drag bending'; else, dtxt = ''; end
+fprintf('Skin strain model: %s%s\n', strain_model, dtxt);
 
 K = V(1).corners;
 fprintf('\nLoft corners (%s, ultimate):\n', V(1).name);
@@ -158,9 +165,13 @@ for k = 1:numel(K)
 end
 fprintf('(F = skin force x angle change: the sideways push per mm of chord at the corner)\n');
 if no_loft
-    fprintf('No ribs inside lofted regions (cfg.rib_no_loft): %s mm. A rib sits just outside each end.\n', ...
-        strjoin(arrayfun(@(j) sprintf('%.0f-%.0f', 1e3*lofts(j,1), 1e3*lofts(j,2)), 1:size(lofts,1), 'UniformOutput', false), ', '));
-    fprintf('("own rib?" = distance from a loaded corner to the nearest rib; the skin carries the corner load over it - check in FEA)\n');
+    if isempty(lofts)
+        fprintf('No lofted regions found on this wing (cfg.rib_no_loft is on but has nothing to exclude).\n');
+    else
+        fprintf('No ribs inside lofted regions (cfg.rib_no_loft): %s mm. A rib sits just outside each end.\n', ...
+            strjoin(arrayfun(@(j) sprintf('%.0f-%.0f', 1e3*lofts(j,1), 1e3*lofts(j,2)), 1:size(lofts,1), 'UniformOutput', false), ', '));
+        fprintf('("own rib?" = distance from a loaded corner to the nearest rib; the skin carries the corner load over it - check in FEA)\n');
+    end
 end
 
 fprintf('\n%-30s %6s %6s %13s %9s %9s %10s %10s %7s\n', 'Variant (masses: half wing)', 'ribs/', 'ribs/', 'skin+plate[g]', 'ribs[g]', 'total[g]', 'tip w[mm]', 'twist[deg]', 'MS min');
@@ -213,7 +224,10 @@ for v = 1:nv
         V(v).n_ribs, strjoin(arrayfun(@(x) sprintf('%.1f', 1e3*x), V(v).ribs', 'UniformOutput', false), ' '));
 end
 fclose(fid);
-save(fullfile('results', [cfg.name '_ribs.mat']), 'V', '-v7');
+% settings this run was made with, so review_figures can refuse results that no longer match the config
+meta = struct('rib_K', cfg.rib_K, 'rib_check_load', cfg.rib_check_load, 'rib_no_loft', no_loft, ...
+              'mount_s', cfg.mount_s, 'mount_bc', cfg.mount_bc, 'strain_model', strain_model, 'drag_bending', drag_bending);
+save(fullfile('results', [cfg.name '_ribs.mat']), 'V', 'meta', '-v7');
 
 figure; hold on; grid on;
 mk = {'-', '--', ':', '-.', '-', '--'};

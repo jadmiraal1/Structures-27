@@ -27,6 +27,29 @@ main_ribs        % loft corners, rib spacing from skin buckling, rib layout per 
 fea_check        % prediction for the SolidWorks FEA check of the beam model
 ```
 
+### Which wing
+
+Every main script takes its inputs from the active wing's config through `wing_config`:
+
+```matlab
+wing_config('rear_wing')     % make the rear wing active (default is 'front_wing')
+main_geometry; main_loads; main_sizing; pick_design; main_ribs; review_figures
+wing_config('front_wing')    % back to the front wing
+```
+
+The choice lasts until you change it or restart MATLAB. Results files are named after the
+wing (`results/front_wing_*`, `results/rear_wing_*`), so both sets coexist. To add a wing,
+write `<name>_config.m`. `fea_check` is specific to the front wing.
+
+Options that differ between the wings (set in each config):
+
+| Setting | Front | Rear | Meaning |
+|---|---|---|---|
+| `flap_tip_fixity` | `'clamped'` | `'pinned'` | How the flap + endplate load reaches the main element tip: force plus the full couple, or force plus the pitch couple only (flaps simply supported at the endplates; endplate tipping moment carried by axial forces in the elements) |
+| `strain_model` | `'horizontal'` | `'unsymmetric'` | Skin strain from a horizontal neutral axis (fine for a section within a few degrees of level), or from unsymmetric bending (needed for the rear section, inclined 6 to 13 deg) |
+| `drag_bending` | off | on | Add the bending from chordwise loads to the skin strain (`'unsymmetric'` only) |
+| `fluent_pressure`, `fluent_viscous` | set | NaN | Fluent Report > Forces for the exported zone; NaN skips the integration check with a warning |
+
 Inputs: `front_wing_config.m` (paths, coordinate transform, load case,
 load factor, safety factor, stations) and `materials_input.m`.
 Values marked PLACEHOLDER must be replaced before results mean anything.
@@ -114,7 +137,8 @@ X/Y/Z Face Area. STL and CFD exports are git-ignored (large, regenerable).
 | `rect_tube_midline.m` | Rectangular tube contour |
 | `load_airfoil.m` | Selig .dat loader (or NACA 4-digit placeholder) |
 | `main_stage1.m` | Stage 1 driver |
-| `front_wing_config.m` | Front wing inputs |
+| `wing_config.m` | Selects the active wing; every driver reads its config through this |
+| `front_wing_config.m`, `rear_wing_config.m` | Inputs for each wing |
 | `read_stl.m`, `read_fluent_ascii.m` | Readers |
 | `transform_tris.m`, `load_main_element.m` | STL to CFD frame, end-cap removal |
 | `point_triangle_distance.m`, `distance_to_mesh.m` | Exact point-to-mesh distance |
@@ -130,6 +154,9 @@ X/Y/Z Face Area. STL and CFD exports are git-ignored (large, regenerable).
 | `zoned_props.m` | Section properties with a skin layup that changes along the span |
 | `kink_corners.m` | Finds loft corners and the sideways skin load at each |
 | `rib_layout.m` | Places ribs so no bay exceeds its allowable spacing |
+| `loft_regions.m` | Finds lofted regions (both skin lines sloping in front view), where no ribs are placed |
+| `skin_strain.m`, `beam_skin_strains.m` | Skin strain under bending about both section axes (unsymmetric bending, optional drag bending) |
+| `review_figures.m` | Design-review figures for the active wing |
 | `fea_check.m` | Skin-only check case and predictions for an independent FEA comparison |
 | `main_geometry.m`, `main_loads.m` | Geometry and loads drivers |
 | `tests/` | Validation tests |
@@ -142,20 +169,20 @@ X/Y/Z Face Area. STL and CFD exports are git-ignored (large, regenerable).
 
 ## Design-review figures (`review_figures.m`)
 
-MATLAB script that reads the saved results and writes three PNG figures for slides to
-`results/review`: loads and bending moment, the section at the mount, and the rib layout
-against the allowable spacing. It does no sizing of its own.
+MATLAB script that reads the saved results of the active wing and writes three PNG figures
+for slides to `results/review_<wing>`: loads and bending moment, the section at the mount
+with its neutral axis, and the rib layout against the allowable spacing. It does no sizing.
 
-1. From `wing_structures`, run `main_ribs` (it needs the saved results of `main_geometry`
-   and `main_loads`). Re-run it whenever `front_wing_config.m` changes.
-2. Run `review_figures`.
-3. To show a different skin variant, change `variant` at the top of the script to any text
-   contained in the variant name (default `'inboard of 350'`).
+1. `wing_config('front_wing')` or `wing_config('rear_wing')`.
+2. Run `main_ribs` (it needs the saved results of `main_geometry` and `main_loads`).
+   Re-run it whenever the wing's config changes; `review_figures` refuses rib results
+   that do not match the config.
+3. Run `review_figures`.
 
-The script also prints the rib stations, each bay against its allowable spacing, mass,
-deflection and twist. Lofted regions are shaded from what `main_ribs` saved. With
-`cfg.rib_no_loft = true` (see `front_wing_config.m`) no rib is placed inside a loft;
-`main_ribs` flags any skin variant that cannot span a loft without one.
+The variant shown is `cfg.review_variant` in the wing's config (any text contained in the
+variant name); set `variant` at the top of the script to override it. The script also
+prints the rib stations, each bay against its allowable spacing, mass, deflection and twist.
+With `cfg.rib_no_loft = true` no rib is placed inside a lofted region, and `main_ribs` flags
+any skin variant that cannot span a loft without one.
 
-`review_figures.py` is an earlier Python version of the same figures (needs numpy, scipy,
-matplotlib; run `python review_figures.py`). It is not needed if you use the MATLAB script.
+Tests for the multi-wing pieces: `addpath('tests'); run_tests_wings`.

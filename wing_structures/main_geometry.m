@@ -8,9 +8,10 @@
 % inside this envelope (minus skin and bond allowances) along its path.
 % Run from the wing_structures folder.
 clear; close all;
-cfg = front_wing_config();
+cfg = wing_config();                  % active wing: see wing_config.m
 M   = materials_input();
 if ~exist('results', 'dir'), mkdir('results'); end
+fprintf('Wing: %s\n', cfg.name);
 
 [T, ~, ginfo] = load_main_element(cfg);
 z_of_s = @(s) cfg.z_sym + s / cfg.side;

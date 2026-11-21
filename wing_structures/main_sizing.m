@@ -1,5 +1,5 @@
 % MAIN_SIZING  Stage 2: size the skin layup, aluminium plate spar and spar
-% position for the front wing main element.
+% position for the wing main element.
 %
 % For every combination of skin layup x plate gauge x spar position:
 %   run A  all LOW stiffness      -> tip deflection and twist at LIMIT load
@@ -11,11 +11,16 @@
 % Requires results/<name>_geometry.mat (main_geometry) and
 % results/<name>_loads.mat (main_loads). Run from wing_structures.
 clear; close all;
-cfg = front_wing_config();
+cfg = wing_config();                  % active wing: see wing_config.m
 M   = materials_input();
 Gm  = load(fullfile('results', [cfg.name '_geometry.mat']));
 Ld  = load(fullfile('results', [cfg.name '_loads.mat'])); Ld = Ld.loads;
 z_of_s = @(s) cfg.z_sym + s / cfg.side;
+fprintf('Wing: %s\n', cfg.name);
+% Skin strain model (see beam_skin_strains); defaults keep the original method
+strain_model = 'horizontal'; drag_bending = false;
+if isfield(cfg, 'strain_model'), strain_model = cfg.strain_model; end
+if isfield(cfg, 'drag_bending'), drag_bending = cfg.drag_bending; end
 
 %% Loads at CFD speed: strips + flap/endplate lump at the tip
 L = Ld.L;
@@ -66,8 +71,7 @@ for j = 1:numel(cfg.skin_options)
             % plate stress (run B)
             sig_p = al{2}.E * abs(BB.kappa) .* hold_i(PB, 'h_p', BB.s) / 2;
             % skin strains (run C): top fibre = +kappa*(y_top-y_c) for hogging
-            ytop = hold_i(PC, 'y_top', BC.s); ybot = hold_i(PC, 'y_bot', BC.s); yc = hold_i(PC, 'y_c', BC.s);
-            e_top = BC.kappa .* (ytop - yc);  e_bot = -BC.kappa .* (yc - ybot);
+            [e_top, e_bot] = beam_skin_strains(PC, BC, Gm.outlines, strain_model, drag_bending);
             e_t = max([e_top; e_bot; 0]);  e_c = max([-e_top; -e_bot; 0]);
             ecomp = max(-e_top, -e_bot); ecomp(ecomp < 1e-12) = 1e-12;
             a_rib = pi * sqrt(lamH.D(1,1) ./ (lamH.h * lamH.Ex * ecomp));   % wide-column, flat (conservative)

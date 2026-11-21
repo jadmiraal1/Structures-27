@@ -35,6 +35,11 @@ cfg.max_lateral_normal = 0.8;         % faces with |n_z| above this are endplate
 % found are replaced by interpolation from neighbouring strips (the CFD
 % geometry's loft transitions sit ~15 mm inboard of the current CAD).
 cfg.coverage_min = 0.90;
+% How the flap loads reach the main element tip (main_loads):
+%   'clamped' force plus the full couple about the tip: flaps cantilevered from the endplate
+%   'pinned'  force plus the pitch couple only: flaps simply supported at the endplates, and
+%             the endplate's tipping moment carried by axial forces in the elements (frame)
+cfg.flap_tip_fixity = 'clamped';
 
 %% Spanwise discretisation
 cfg.strip_ds = 0.020;                 % m, load strip width
@@ -74,6 +79,7 @@ cfg.rib_no_loft     = true;        % true: no ribs inside lofted regions (where 
                                    %   and corners no longer get their own rib. false: previous behaviour.
 cfg.loft_slope_min  = deg2rad(1);  % rad: skin lines steeper than this in front view count as lofted
 cfg.rib_loft_margin = 0.003;       % m: rib centre this far outside the loft end (rib on constant section)
+cfg.review_variant = 'inboard of 350';   % variant shown by review_figures (text contained in its name)
 cfg.rib_K         = 0.7;     % skin buckling effective length factor: 1 = ribs act as pins (conservative),
                              %   ~0.7 = filleted/tabbed ribs partly clamp the skin, 0.5 = fully clamped
 cfg.rib_check_load = 'ultimate';  % 'ultimate' (no skin buckling below ultimate), 'limit', or

@@ -6,18 +6,36 @@
 %   fig2_section.png     section at the mount: skin, spar plate, neutral axis
 %   fig3_rib_layout.png  rib stations on the planform, bay length vs allowable spacing
 %
-% Run main_ribs first (and again after any change to front_wing_config.m),
-% then run this from wing_structures. No sizing is done here: every number
+% Run main_ribs first (and again after any change to the wing's config),
+% then run this from wing_structures. The wing is the active one (wing_config). No sizing is done here: every number
 % comes from the results files and the config.
 clear; close all;
-variant = 'inboard of 350';              % any text contained in the variant name (cfg.rib_variants)
-out_dir = fullfile('results', 'review');
+variant = '';                            % any text contained in the variant name (cfg.rib_variants);
+                                         % '' = the wing's cfg.review_variant
 
-cfg = front_wing_config();
+cfg = wing_config();                  % active wing: see wing_config.m
 M   = materials_input();
 Gm  = load(fullfile('results', [cfg.name '_geometry.mat']));
 Ld  = load(fullfile('results', [cfg.name '_loads.mat'])); Ld = Ld.loads;
 Rb  = load(fullfile('results', [cfg.name '_ribs.mat'])); V = Rb.V;
+
+% Refuse rib results that were not made with the current code and config
+no_loft = isfield(cfg, 'rib_no_loft') && cfg.rib_no_loft;
+if ~isfield(Rb, 'meta')
+    error('review_figures:stale', ['%s_ribs.mat was written by an older main_ribs, so it does not match ' ...
+        '%s_config.m.\nRun main_ribs, then review_figures.'], cfg.name, cfg.name);
+end
+meta = Rb.meta;
+if meta.rib_K ~= cfg.rib_K || ~strcmpi(meta.rib_check_load, cfg.rib_check_load) ...
+        || logical(meta.rib_no_loft) ~= no_loft || abs(meta.mount_s - cfg.mount_s) > 1e-9 ...
+        || ~strcmpi(meta.mount_bc, cfg.mount_bc) ...
+        || (isfield(meta, 'strain_model') && isfield(cfg, 'strain_model') && ~strcmpi(meta.strain_model, cfg.strain_model))
+    error('review_figures:stale', ['%s_ribs.mat does not match its config (it was saved with K = %g, ' ...
+        'check at %s, no ribs in lofts = %d, mount %s).\nRun main_ribs, then review_figures.'], ...
+        cfg.name, meta.rib_K, meta.rib_check_load, meta.rib_no_loft, meta.mount_bc);
+end
+if isempty(variant), variant = cfg.review_variant; end
+out_dir = fullfile('results', ['review_' cfg.name]);
 if ~exist(out_dir, 'dir'), mkdir(out_dir); end
 
 iv = find(arrayfun(@(x) ~isempty(strfind(lower(x.name), lower(variant))), V), 1);
@@ -27,7 +45,7 @@ end
 v  = V(iv);
 ic = find(cellfun(@(c) strcmp(c.name, v.name), cfg.rib_variants), 1);
 if isempty(ic)
-    error('review_figures:stale', 'Variant "%s" is not in front_wing_config any more. Re-run main_ribs.', v.name);
+    error('review_figures:stale', 'Variant "%s" is not in %s_config any more. Re-run main_ribs.', v.name, cfg.name);
 end
 var = cfg.rib_variants{ic};
 D   = cfg.rib_design;
@@ -43,6 +61,12 @@ s_tip = cfg.side * (Ld.r_ep(3) - cfg.z_sym);
 ribs = v.ribs(:); bays = v.bays; fixed = v.fixed(:);
 lofts = zeros(0, 2);
 if isfield(v, 'lofts'), lofts = reshape(v.lofts, [], 2); end
+bad = [];                                             % ribs that fell inside a loft (skin too thin to span it)
+if isfield(v, 'ribs_in_loft'), bad = v.ribs_in_loft(:); end
+if ~isempty(bad)
+    warning('review_figures:loft', 'Variant "%s" has ribs inside a loft (%s mm): its skin cannot span the loft. Pick another variant.', ...
+        v.name, strjoin(arrayfun(@(x) sprintf('%.0f', 1e3*x), bad', 'UniformOutput', false), ', '));
+end
 
 % skin plies along the span for this variant
 nb = numel(D.base_layup);
@@ -56,9 +80,9 @@ n_mount = interp1(sz, npl, cfg.mount_s, 'nearest');
 %% Figure 1: loads
 w_lim = -Fy ./ ds * Ld.k_limit;                       % downforce per span at limit [N/m]
 edges = [s_mid - ds/2; s_mid(end) + ds(end)/2];
-% Bending moment at ultimate from statics (pinned mount, symmetric centre
-% plane): the same quantity as halfspan_beam's M_hog for cfg.mount_bc =
-% 'pinned'. The small F_z * height term is left out.
+% Bending moment at ultimate. Fallback from statics (pinned mount, symmetric
+% centre plane, F_z * height term left out); replaced below by the beam
+% model's M_hog when main_ribs saved it.
 sg = linspace(0, s_tip, 600)';
 F_down = -(sum(Fy) + Ld.F_ep(2));                     % total downforce on the half wing
 Mh = zeros(size(sg));
@@ -69,6 +93,9 @@ for i = 1:numel(sg)
     if sg(i) < cfg.mount_s, Mh(i) = Mh(i) - F_down * (cfg.mount_s - sg(i)); end
 end
 Mh = Mh * Ld.k_ult;
+if isfield(v, 'M_ult') && ~isempty(v.M_ult)          % the beam model's own moment, when main_ribs saved it
+    sg = v.s(:); Mh = v.M_ult(:);
+end
 [M_peak, ip] = max(Mh);
 
 f1 = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1000 640]);
@@ -110,28 +137,47 @@ y_hi = 1e3 * (interp1(Dp.x, Dp.y_hi, xp) - yc); y_lo = 1e3 * (interp1(Dp.x, Dp.y
 clr = 1e3 * (n_mount * M.twill.t + cfg.bond_gap);     % skin thickness + bond gap
 h_plate = (y_hi - y_lo) - 2*clr;
 xs = 1e3 * (max(xy(:,1)) - xp);
-[y_bot, ib] = min(ya);
-it = find(ya > 0 & abs(xa - 0.5*chord) < 4);
-y_top = mean(ya(it));
+% Neutral axis under a vertical load. 'horizontal': through the skin centroid.
+% 'unsymmetric': tilted by Ixz/Izz (uniform skin, so the modulus cancels), the
+% same assumption beam_skin_strains makes. ea = vertical distance from it [mm].
+strain_model = 'horizontal';
+if isfield(cfg, 'strain_model'), strain_model = cfg.strain_model; end
+xc = sum(Lg .* mid(:,1)) / sum(Lg);
+dsg = p2 - xy; dxm = mid(:,1) - xc; dym = mid(:,2) - yc;
+Izz = sum(Lg .* (dxm.^2 + dsg(:,1).^2/12)); Ixz = sum(Lg .* (dxm.*dym + dsg(:,1).*dsg(:,2)/12));
+na_slope = 0;
+if strcmpi(strain_model, 'unsymmetric'), na_slope = Ixz / Izz; end
+ea = ya - 1e3 * na_slope * (xy(:,1) - xc);
+na_y = @(xq) -na_slope * (xq - 1e3*(max(xy(:,1)) - xc));   % neutral axis height at xq mm behind the LE
+[e_bot, ib] = min(ea);                                % most compressed fibre when the wing hogs
+[e_top, it] = max(ea);
 
-f2 = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1000 380]);
-hold on; grid on; box off; set(gca, 'FontSize', fs);
+f2 = figure('Visible', 'off', 'Color', 'w', 'Position', [100 100 1000 520]);
+axes('Position', [0.08 0.42 0.88 0.48]); hold on; grid on; box off; set(gca, 'FontSize', fs);
 plot([xa; xa(1)], [ya; ya(1)], 'Color', ink, 'LineWidth', 2.5);
-plot([-8 chord + 8], [0 0], '--', 'Color', grey, 'LineWidth', 1.2);
-text(0.55*chord, 2.5, 'neutral axis', 'Color', grey, 'FontSize', fs);
-patch('XData', xs + [-1.2 1.2 1.2 -1.2], 'YData', [y_lo + clr, y_lo + clr, y_hi - clr, y_hi - clr], ...
-    'FaceColor', orange, 'EdgeColor', 'none');
-text(xs + 6, -9, {sprintf('Spar plate, %.0f mm behind LE', 1e3*D.spar_aft), sprintf('%.0f mm tall', h_plate)}, ...
-    'Color', orange, 'FontSize', fs, 'VerticalAlignment', 'middle');
-plot([xa(ib), xa(ib) + 60], [y_bot, y_bot - 9], 'Color', blue, 'LineWidth', 1);
-text(xa(ib) + 63, y_bot - 6, {sprintf('Bottom skin: %.1f mm below the neutral axis', -y_bot), '(compression under downforce)'}, ...
-    'Color', blue, 'FontSize', fs, 'VerticalAlignment', 'top');
-plot([0.5*chord, 0.5*chord + 12], [y_top, y_top + 9], 'Color', blue, 'LineWidth', 1);
-text(0.5*chord + 15, y_top + 10, sprintf('Top skin: about %.0f mm above (tension)', y_top), 'Color', blue, 'FontSize', fs);
-xlim([-8 chord + 8]); ylim([min(ya) - 22, max(ya) + 20]);
+plot([-8 chord + 8], na_y([-8 chord + 8]), '--', 'Color', grey, 'LineWidth', 1.2);
+plot([xs xs], [y_lo + clr, y_hi - clr], 'Color', orange, 'LineWidth', 4);
+plot(xa(ib), ya(ib), 'o', 'MarkerSize', 8, 'MarkerEdgeColor', blue, 'MarkerFaceColor', blue);
+plot(xa(it), ya(it), 'o', 'MarkerSize', 8, 'MarkerEdgeColor', blue, 'MarkerFaceColor', 'w', 'LineWidth', 1.5);
+xlim([-8 chord + 8]); ylim([min(ya) - 10, max(ya) + 10]);
 daspect([1 1 1]);
 xlabel('Distance behind leading edge [mm]'); ylabel('Height [mm]');
 title(sprintf('Section at the mount (%.0f mm station): chord %.0f mm', 1e3*Gm.G.s(k), chord));
+% key, drawn by hand in its own axes so it never covers the section
+axes('Position', [0.08 0.02 0.88 0.27]); hold on; axis off; xlim([0 1]); ylim([0 1]);
+key = {'Skin (outer mould line)', 'Neutral axis under a vertical load', ...
+    sprintf('Spar plate: %.0f mm behind LE, %.0f mm tall', 1e3*D.spar_aft, h_plate), ...
+    sprintf('Most compressed skin under downforce: %.1f mm from the neutral axis', -e_bot), ...
+    sprintf('Most stretched skin under downforce: %.1f mm from the neutral axis', e_top)};
+ky = 0.92 - 0.2*(0:4);
+plot([0.01 0.05], ky(1)*[1 1], 'Color', ink, 'LineWidth', 2.5);
+plot([0.01 0.05], ky(2)*[1 1], '--', 'Color', grey, 'LineWidth', 1.2);
+plot([0.01 0.05], ky(3)*[1 1], 'Color', orange, 'LineWidth', 4);
+plot(0.03, ky(4), 'o', 'MarkerSize', 8, 'MarkerEdgeColor', blue, 'MarkerFaceColor', blue);
+plot(0.03, ky(5), 'o', 'MarkerSize', 8, 'MarkerEdgeColor', blue, 'MarkerFaceColor', 'w', 'LineWidth', 1.5);
+for r = 1:numel(key)
+    text(0.07, ky(r), key{r}, 'Color', ink, 'FontSize', fs, 'VerticalAlignment', 'middle');
+end
 print(f2, '-dpng', '-r200', fullfile(out_dir, 'fig2_section.png'));
 
 %% Figure 3: rib layout
@@ -155,8 +201,7 @@ for j = 1:size(lofts, 1)
     text(1e3*mean(lofts(j,:)), 0.62*chord, 'loft', 'Color', ink, 'FontSize', fs, 'HorizontalAlignment', 'center');
 end
 plot([0 1e3*s_tip], 1e3*D.spar_aft*[1 1], 'Color', orange, 'LineWidth', 3);
-text(1e3*mean(ribs(1:2)), 1e3*D.spar_aft + 14, 'spar plate', 'Color', orange, 'FontSize', fs, ...
-    'HorizontalAlignment', 'center', 'VerticalAlignment', 'top');
+text(1e3*ribs(1) + 4, 1e3*D.spar_aft + 14, 'spar plate', 'Color', orange, 'FontSize', fs, 'VerticalAlignment', 'top');
 for i = 1:numel(ribs)
     r = ribs(i); col = grey; lw = 2;
     if any(abs(r - others) < 1e-6), col = blue; lw = 4; end
@@ -174,9 +219,11 @@ if ~isempty(others)
 end
 text(1e3*s_tip, chord + 12, 'endplate', 'Color', ink, 'FontSize', fs, ...
     'HorizontalAlignment', 'right', 'VerticalAlignment', 'top');
-xlim([-5 1e3*s_tip + 5]); ylim([-55 chord + 95]);
+xlim([-5 1e3*s_tip + 5]); ylim([-55 chord + 110]);
 set(gca, 'YTick', [0 chord], 'YTickLabel', {'LE', 'TE'}, 'XTick', []);
-title(sprintf('Half wing, top view: %d ribs per side (%d in the wing), stations in mm', n_half, n_full));
+ttl = sprintf('Half wing, top view: %d ribs per side (%d in the wing), stations in mm', n_half, n_full);
+if ~isempty(bad), ttl = [ttl ' - NOT VALID: ribs inside a loft']; end
+title(ttl);
 
 subplot(2, 1, 2); hold on; grid on; box off; set(gca, 'FontSize', fs);
 h1 = plot(1e3*v.s, 1e3*min(v.a, 0.5), 'Color', blue, 'LineWidth', 2.5);
